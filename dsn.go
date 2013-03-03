@@ -1,0 +1,110 @@
+package dsn
+
+import (
+  "net/url"
+  "reflect"
+  "regexp"
+  "strings"
+)
+
+type DSN struct {
+  Type     string
+  Username string
+  Password string
+  Protocol string
+  Address  string
+  Database string
+  Params   map[string]string
+}
+
+// Converts a DSN struct into its string representation.
+func (d DSN) String() string {
+  str := ""
+
+  if d.Type != "" {
+    str += d.Type + "://"
+  }
+
+  if d.Username != "" {
+    str += d.Username
+  }
+
+  if d.Password != "" {
+    str += ":" + d.Password
+  }
+
+  if d.Username != "" && d.Password != "" {
+    str += "@"
+  }
+
+  if d.Protocol != "" {
+    str += d.Protocol
+  }
+
+  if d.Address != "" {
+    str += "(" + d.Address + ")"
+  }
+
+  str += "/"
+
+  if d.Database != "" {
+    str += d.Database
+  }
+
+  if d.Params != nil && len(d.Params) > 0 {
+    str += "?"
+
+    i := 0
+    for key, value := range d.Params {
+      str += key + "=" + value
+
+      if i < len(d.Params)-1 {
+        str += "&"
+      }
+
+      i++
+    }
+  }
+
+  return str
+}
+
+var (
+  // Regex testing: http://regoio.herokuapp.com/
+  regex = regexp.MustCompile(
+    `^(?:(?P<Type>.*?)?://)?` + // [type://]
+      `(?:(?P<Username>.*?)(?::(?P<Password>.*))?@)?` + // [username[:password]@]
+      `(?:(?P<Protocol>[^\(]*)(?:\((?P<Address>[^\)]*)\))?)?` + // [protocol[(address)]]
+      `\/(?P<Database>.*?)` + // /database
+      `(?:\?(?P<Params>[^\?]*))?$`) // [?param1=value1]
+)
+
+// Turns a DSN string into a parsed DSN struct.
+func ParseDSN(s string) *DSN {
+  dsn := &DSN{}
+
+  matches := regex.FindStringSubmatch(s)
+  names := regex.SubexpNames()
+
+  vof := reflect.ValueOf(dsn).Elem()
+
+  if len(matches) > 0 {
+    for n, match := range matches[1:] {
+      name := names[n+1]
+      if name == "Params" {
+        values, err := url.ParseQuery(match)
+        if err != nil {
+          panic(err)
+        }
+        dsn.Params = make(map[string]string)
+        for key, vals := range values {
+          dsn.Params[key] = strings.Join(vals, ",")
+        }
+      } else {
+        vof.FieldByName(name).SetString(match)
+      }
+    }
+  }
+
+  return dsn
+}
